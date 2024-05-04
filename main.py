@@ -5,8 +5,8 @@ from spotipy.cache_handler import CacheFileHandler
 from spotipy.oauth2 import SpotifyOAuth
 import json
 
-SCOPES = ['playlist-read-private', 'playlist-modify-public', 'playlist-modify-private', 'playlist-read-collaborative']
-ACTIONS = ['shuffle', 'sort-popularity', 'sort-alphabetical'] + [f"sort-audio-feature-{x}" for x in ['acousticness', 'danceability', 'duration_ms', 'energy', 'instrumentalness', 'key', 'liveness', 'loudness', 'mode', 'speechiness', 'tempo', 'time_signature', 'valence']]
+SCOPES = ['playlist-read-private', 'playlist-modify-public', 'playlist-modify-private', 'playlist-read-collaborative', 'ugc-image-upload']
+ACTIONS = ['nop','shuffle', 'sort-popularity', 'sort-alphabetical'] + [f"sort-audio-feature-{x}" for x in ['acousticness', 'danceability', 'duration_ms', 'energy', 'instrumentalness', 'key', 'liveness', 'loudness', 'mode', 'speechiness', 'tempo', 'time_signature', 'valence']]
 
 class SpotifyPlaylistMod():
     def __init__(self, confPath = "config.json", no_browser = False) -> None:
@@ -82,6 +82,10 @@ class SpotifyPlaylistMod():
     def apply(self, mod, asc = True):
         if mod not in ACTIONS:
             raise Exception()
+        if mod == "nop":
+            # Get the list of tracks with the shape it would have if we were to commit it
+            self.playlist['tracks'] = [x['uri'] for x in self.playlist['tracks']]
+            return
         if mod == "shuffle":
             return self.__shuffle()
         if mod == "sort-popularity":
@@ -159,7 +163,7 @@ class SpotifyPlaylistMod():
             res = self.spotify.playlist_add_items(self.playlist['id'], self.playlist['tracks'][i:i+100])
         print("\033[2K\rOnline playlist updated")
     
-def createCronJob(playlist, mod, order, confPath):
+def createCronJob(playlist, mod, order, confPath, img = False):
     from subprocess import call
     job = input("Would you like to set up a systemd timer to apply this to the playlist periodically ? [y/N]")
     if job.lower() != 'y':
@@ -174,7 +178,9 @@ def createCronJob(playlist, mod, order, confPath):
     
     description = f"{mod.capitalize()} the Spotify playlist {playlist['name']}"
     
-    print(f"Creating spotify-playlist-mod-{playlist['id']}.service using {confPath} as conf file, with description '{description}' to apply {mod} on {playlist['name']} every {interval}. This will be done as a user service.\nTo see the logs, use 'journalctl --user -u spotify-playlist-mod-{playlist['id']}.service', to disable it, use 'systemctl --user disable spotify-playlist-mod-{playlist['id']}.timer'")
+    print(f"""Creating the user service spotify-playlist-mod-{playlist['id']}.service using {confPath} as conf file, with description '{description}' to apply {mod} on {playlist['name']} {"and generate a new cover image " if img else ""}every {interval}.\n
+          To see the logs, use 'journalctl --user -u spotify-playlist-mod-{playlist['id']}.service', to disable it, use 'systemctl --user disable spotify-playlist-mod-{playlist['id']}.timer'\n
+          > cmdline will be: {" ".join(["/usr/bin/python3", str(__file__) , "--playlist", str(playlist['id']), "--playlist-modification", str(mod), "--playlist-sort-order", str(order), "--conf", confPath, "--image" if img else ""])}""")
  
     if input("Is that correct ? [y/N]").lower() != 'y':
         print("Aborting")
@@ -182,9 +188,32 @@ def createCronJob(playlist, mod, order, confPath):
     
     print("Creating the timer")
     call(["systemd-run", "--user", "-d", f"--on-calendar={interval}", f"--unit=spotify-playlist-mod-{playlist['id']}.timer", f"--description={description}", "--",
-          "/usr/bin/python3", str(__file__) , "--playlist", str(playlist['id']), "--playlist-modification", str(mod), "--playlist-sort-order", str(order), "--conf", confPath], shell=False)
+          "/usr/bin/python3", str(__file__) , "--playlist", str(playlist['id']), "--playlist-modification", str(mod), "--playlist-sort-order", str(order), "--conf", confPath, "--image" if img else ""], shell=False)
     print("Done !")
-        
+
+def generateImage(playlist):
+    import randimage as ri
+    import random
+    import numpy as np
+    import matplotlib.image as MPimg
+    from io import BytesIO
+    import base64
+    
+    seed = ''.join(playlist['tracks'])
+    random.seed(seed)
+    np.random.seed(sum([ord(x) for x in seed]))
+    
+    img_size = (256, 256)
+    
+    mask = ri.SaltPepperMask(img_size).get_mask()
+    path = ri.ProbabilisticPath(mask).get_path()
+    img = ri.ColoredPath(path, mask.shape).get_colored_path('Spectral')
+    
+    bio = BytesIO()
+    MPimg.imsave(bio, img)
+    bio.seek(0)
+    
+    return base64.b64encode(bio.read())
 
 if __name__ == "__main__":
     import argparse
@@ -195,6 +224,7 @@ if __name__ == "__main__":
     args.add_argument('--playlist-modification', help='Modification to apply to the playlist', default=None, choices=ACTIONS)
     args.add_argument('--playlist-sort-order', help='Order of the playlist after modification', default='asc', choices=['asc', 'desc'])
     args.add_argument('--interactive', help='Start the interactive mode', action='store_true')
+    args.add_argument('--image', help='Generate an image for the playlist', action='store_true')
     args.add_argument('--no-browser', help='Don\'t open the browser for the authentication', action='store_true')
     args = args.parse_args()
     
@@ -230,7 +260,7 @@ if __name__ == "__main__":
             except ValueError or IndexError:
                 continue
             break
-        if input(f"Applying {args.playlist_modification} on {util.playlist['name']}. Is that correct ? [y/N]").lower() != 'y':
+        if input(f"Applying {args.playlist_modification} on {util.playlist['name']}. Is that correct ? [Y/n]").lower() not in ['y', 'yes', '']:
             print("Aborting")
             exit(0)
 
@@ -238,5 +268,12 @@ if __name__ == "__main__":
     util.apply(args.playlist_modification, args.playlist_sort_order == 'asc')
     print(f"All done !")
     
+    if args.interactive and not args.image:
+        args.image = input("Would you like to generate an image fo the playlist ? [y/N]").lower() == 'y'
+
+    if args.image:
+        img = generateImage(util.playlist)
+        # util.spotify.playlist_upload_cover_image(util.playlist['id'], img)
+    
     if args.interactive:
-        createCronJob(util.playlist, args.playlist_modification, args.playlist_sort_order, args.conf)
+        createCronJob(util.playlist, args.playlist_modification, args.playlist_sort_order, args.conf, args.image)
