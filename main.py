@@ -21,7 +21,6 @@ class SpotifyPlaylistMod():
                 client_secret=conf["Client secret"],
                 redirect_uri=conf["Redirect URI"] if "Redirect URI" in conf.keys() else "http://localhost:8888",
                 scope=SCOPES,
-                cache_handler=CacheFileHandler(cache_path='.cache/token.json'),
                 open_browser=not no_browser
             )
 
