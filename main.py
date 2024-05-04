@@ -9,10 +9,10 @@ SCOPES = ['playlist-read-private', 'playlist-modify-public', 'playlist-modify-pr
 ACTIONS = ['shuffle', 'sort-popularity', 'sort-alphabetical'] + [f"sort-audio-feature-{x}" for x in ['acousticness', 'danceability', 'duration_ms', 'energy', 'instrumentalness', 'key', 'liveness', 'loudness', 'mode', 'speechiness', 'tempo', 'time_signature', 'valence']]
 
 class SpotifyPlaylistMod():
-    def __init__(self, confPath = "config.json") -> None:
-        self.spotify = self.getSpotify(confPath)    
+    def __init__(self, confPath = "config.json", no_browser = False) -> None:
+        self.spotify = self.getSpotify(confPath, no_browser)    
     
-    def getSpotify(self, path = "config.json") -> spotipy.Spotify:
+    def getSpotify(self, path = "config.json", no_browser = False) -> spotipy.Spotify:
         with open(path) as f:
             conf = json.load(f)
 
@@ -21,7 +21,8 @@ class SpotifyPlaylistMod():
                 client_secret=conf["Client secret"],
                 redirect_uri=conf["Redirect URI"] if "Redirect URI" in conf.keys() else "http://localhost:8888",
                 scope=SCOPES,
-                cache_handler=CacheFileHandler(cache_path='.cache/token.json')
+                cache_handler=CacheFileHandler(cache_path='.cache/token.json'),
+                open_browser=not no_browser
             )
 
         return spotipy.Spotify(
@@ -195,6 +196,7 @@ if __name__ == "__main__":
     args.add_argument('--playlist-modification', help='Modification to apply to the playlist', default=None, choices=ACTIONS)
     args.add_argument('--playlist-sort-order', help='Order of the playlist after modification', default='asc', choices=['asc', 'desc'])
     args.add_argument('--interactive', help='Start the interactive mode', action='store_true')
+    args.add_argument('--no-browser', help='Don\'t open the browser for the authentication', action='store_true')
     args = args.parse_args()
     
     if args.playlist is None and args.playlist_modification is None:
@@ -204,7 +206,7 @@ if __name__ == "__main__":
     
     print("Arguments:", args)
     
-    util = SpotifyPlaylistMod(args.conf)
+    util = SpotifyPlaylistMod(args.conf, args.no_browser)
     
     util.getPlaylist(args.playlist if args.playlist is not None else util.askForPlaylist())
     if util.playlist is None:
