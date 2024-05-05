@@ -161,7 +161,7 @@ class SpotifyPlaylistMod():
             
             # Append shuffled to the playlist
             res = self.spotify.playlist_add_items(self.playlist['id'], self.playlist['tracks'][i:i+100])
-        print("\033[2K\rOnline playlist updated")
+        print("\033[2K\nOnline playlist updated")
     
 def createTimer(playlist, mod, order, confPath, img = False):
     from subprocess import call, check_output
@@ -247,6 +247,7 @@ ExecStart={cmd}
     print("\033[2K\rDone !")
 
 def generateImage(playlist):
+    print("Generating cover image for the playlist", playlist['name'])
     import randimage as ri
     import random
     import numpy as np
@@ -260,13 +261,21 @@ def generateImage(playlist):
     
     img_size = (256, 256)
     
+    print("Generating the mask", end='')
     mask = ri.SaltPepperMask(img_size).get_mask()
+    print("\033[2K\rMask generated")
+    print("Generating the path", end='')
     path = ri.ProbabilisticPath(mask).get_path()
+    print("\033[2K\rPath generated")
+    print("Generating the image", end='')
     img = ri.ColoredPath(path, mask.shape).get_colored_path('Spectral')
+    print("\033[2K\rImage generated, saving...")
     
     bio = BytesIO()
     MPimg.imsave(bio, img)
     bio.seek(0)
+
+    print("Image generated, size:", bio.getbuffer().nbytes / 1000, "kB")
     
     return base64.b64encode(bio.read())
 
@@ -328,7 +337,7 @@ if __name__ == "__main__":
 
     if args.image:
         img = generateImage(util.playlist)
-        # util.spotify.playlist_upload_cover_image(util.playlist['id'], img)
+        util.spotify.playlist_upload_cover_image(util.playlist['id'], img)
     
     if args.interactive:
         createTimer(util.playlist, args.playlist_modification, args.playlist_sort_order, args.conf, args.image)
