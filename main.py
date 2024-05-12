@@ -215,6 +215,10 @@ Description={description}
 [Timer]
 OnCalendar={interval}
 Persistent=true
+AccuracySec=2h
+
+[Install]
+WantedBy=timers.target
 """
 
     service = f"""[Unit]
