@@ -1,2 +1,4 @@
 .cache
 config.json
+spotify-playlist-mod-*.service
+spotify-playlist-mod-*.timer

@@ -184,8 +184,9 @@ def createTimer(playlist, mod, order, confPath, img = False):
     
     print(f"""
 Creating the user service spotify-playlist-mod-{playlist['id']}.service to apply {mod} on {playlist['name']} {"and generate a new cover image " if img else ""}every {interval}.
-To see the logs, use 'journalctl --user -u spotify-playlist-mod-{playlist['id']}.service'.
-To disable it, use 'systemctl --user disable spotify-playlist-mod-{playlist['id']}.timer'
+To enable it `cp`, `mv` or `ln -L` the .timer and .service to `/etc/systemd/system/` and use `systemctl enable spotify-playlist-mod-{playlist['id']}.timer`.
+To see the logs, use 'journalctl -u spotify-playlist-mod-{playlist['id']}.service'.
+To disable it, use 'systemctl disable spotify-playlist-mod-{playlist['id']}.timer'
 
 > cmdline will be: {cmd}""")
  
@@ -193,22 +194,7 @@ To disable it, use 'systemctl --user disable spotify-playlist-mod-{playlist['id'
         print("Aborting")
         return
     
-    print("Finding the user systemd directory...", end='')
-    dirs = check_output(["systemd-analyze", "--user", "unit-paths"]).decode().split('\n')
-    if len(dirs) == 0:
-        print("\033[2K\rCouldn't find the user systemd directory, output will be in the current directory and not activated")
-        dirs = path.realpath(".")
-    elif len(dirs) == 1:
-        print("\033[2K\rUser systemd directory is", dirs[0])
-    else:
-        if path.expanduser("~/.config/systemd/user") in dirs:
-            print("\033[2K\rUser systemd directory is", path.expanduser("~/.config/systemd/user"))
-            dirs = path.expanduser("~/.config/systemd/user")
-        else:
-            dirs = dirs[0]
-            print("\033[2K\rMultiple directories found, using the first one:", dirs)
-
-    print("Creating the timer and service...", end='')
+    dirs = path.realpath(".")
     timer = f"""[Unit]
 Description={description}
 
@@ -231,25 +217,17 @@ WorkingDirectory={path.dirname(path.realpath(__file__))}
 ExecStart={cmd}
 """
     
-    with open(path.join(dirs, f"spotify-playlist-mod-{playlist['id']}.timer"), 'w') as f:
+    with open(f"spotify-playlist-mod-{playlist['id']}.timer", 'w') as f:
         f.write(timer)
-    with open(path.join(dirs, f"spotify-playlist-mod-{playlist['id']}.service"), 'w') as f:
+    with open(f"spotify-playlist-mod-{playlist['id']}.service", 'w') as f:
         f.write(service)
     
-    if call(["systemd-analyze", "verify", path.join(dirs, f"spotify-playlist-mod-{playlist['id']}.timer")]) != 0 or call(["systemd-analyze", "verify", path.join(dirs, f"spotify-playlist-mod-{playlist['id']}.service")]) != 0:
-        print("\033[2K\rCouldn't validate the files. They are in", dirs, "but aren't activated, and are probably not functional.")
+    if call(["systemd-analyze", "verify", f"spotify-playlist-mod-{playlist['id']}.timer"]) != 0 or call(["systemd-analyze", "verify", f"spotify-playlist-mod-{playlist['id']}.service"]) != 0:
+        print("\033[2K\rCouldn't validate the files.")
         return
+        
+    print("\033[2K\rDone ! The files are in the current directory and not activated, but validated.")
     
-    if path.realpath(dirs) == path.realpath("."):
-        print("\033[2K\rDone ! The files are in the current directory and not activated, but validated.")
-        return
-    
-    print("\033[2K\rEnabling the timer...", end='')
-    
-    call(["systemctl", "--user", "start", f"spotify-playlist-mod-{playlist['id']}.timer"])
-    
-    print("\033[2K\rDone !")
-
 def generateImage(playlist):
     print("Generating cover image for the playlist", playlist['name'])
     import randimage as ri
